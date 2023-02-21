@@ -1,0 +1,6 @@
+node_modules/
+app_old.js
+test.txt
+.env
+.idea/
+bandcamp.html

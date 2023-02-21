@@ -1,0 +1,30 @@
+{
+  "name": "bandcamp-downloader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "ts-node ./src/app.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^18.11.18",
+    "axios": "^1.2.5",
+    "chalk": "^4.0.0",
+    "domhandler": "^5.0.3",
+    "domutils": "^3.0.1",
+    "dotenv": "^16.0.3",
+    "htmlparser2": "^8.0.1",
+    "node-id3": "^0.2.6",
+    "progress": "^2.0.3",
+    "ts-node": "^10.9.1"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.14.191",
+    "@types/progress": "^2.0.5",
+    "lodash": "^4.17.21",
+    "typescript": "^4.9.4"
+  }
+}

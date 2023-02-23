@@ -9,7 +9,7 @@ export default class Recording {
     private _tracks: TrackData[] = [];
 
     get artistName(): string {
-        return this._artistName;
+        return this._artistName.trim();
     }
 
     set artistName(value: string) {

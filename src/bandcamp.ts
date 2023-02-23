@@ -5,6 +5,7 @@ import DownloadService from "./services/downloadService";
 import axios from "axios";
 import chalk from 'chalk';
 import {TrackData, DomTrackInfo} from "./types";
+import RecordingPath from "./recording/recordingPath";
 
 
 export class BandCamp{
@@ -13,34 +14,38 @@ export class BandCamp{
 
     downloadService:DownloadService;
 
-    albumUrl='https://billystrings.bandcamp.com/album/me-and-dad';
-
     constructor() {
         this.recording = new Recording();
         this.downloadService = new DownloadService();
     }
 
-    async downloadTracks() {
+    async main() {
 
-        await this.parseTracksFromHtml();
+        const args = process.argv;
+        const albumUrl:string = args[2];
 
-        const tracks = this.recording.tracks;
-        const album = this.recording.albumName;
-        const artist = this.recording.artistName;
-        const releaseDate = new Date(this.recording.releaseDate);
-
-        console.log(chalk.cyan(`Download initiated for ${artist} - ${album}...`));
 
         const baseDir = process.env.BASE_DIR;
+        await this.parseTracksFromHtml(albumUrl);
 
-        const artistDirName = `${baseDir}${artist.trim()}`;
-        const albumDirName = this.downloadService.prepareAlbumDirName(artistDirName,album);
-        const albumImagePath = `${albumDirName}/albumArt.jpeg`;
+        const tracks = this.recording.tracks;
+        const releaseDate = new Date(this.recording.releaseDate);
+
+        console.log(chalk.cyan(
+            `Download initiated for ${this.recording.artistName} - ${this.recording.albumName}...`)
+        );
+
+        if(typeof baseDir !== 'string') {
+            console.log(chalk.red(`Error creating directories. No baseDir path specified.`));
+            process.exit();
+        }
+
+        const recordingPath = new RecordingPath(baseDir,this.recording);
 
         try{
-            await this.downloadService.createFolder(artistDirName);
-            await this.downloadService.createFolder(albumDirName);
-            await this.downloadService.saveAlbumImage(this.recording.albumImage,albumImagePath);
+            await this.downloadService.createFolder(recordingPath.getArtistDirPath());
+            await this.downloadService.createFolder(recordingPath.getAlbumDirPath());
+            await this.downloadService.saveAlbumImage(this.recording.albumImage,recordingPath.getAlbumImagePath());
         } catch(e) {
             console.log(chalk.red(e));
             console.log(chalk.red("Exiting..."))
@@ -48,21 +53,21 @@ export class BandCamp{
         }
 
         let currTrack = 1;
+
         for(let track of tracks){
-            const fileName = `${albumDirName}/${track.title}.mp3`;
             track.metadata = {
                 title:track.title,
-                artist:artist,
-                album:album,
-                image:albumImagePath,
+                artist:this.recording.artistName,
+                album:this.recording.albumName,
+                image:recordingPath.getAlbumImagePath(),
                 trackNumber:''+ track.trackNum,
                 date:`${releaseDate.getDate()}${releaseDate.getMonth() + 1}`,
                 year:''+releaseDate.getFullYear()
             }
             try{
                 await this.downloadService.downloadTrack(
+                    recordingPath,
                     track,
-                    fileName,
                     currTrack,
                     tracks.length
                 );
@@ -71,15 +76,11 @@ export class BandCamp{
             catch(err) {
                 console.log(chalk.red(`Error downloading track! ${err}`));
             }
-
         }
-        //todo remove album art after download finishes
     }
 
-
-    async parseTracksFromHtml() {
-        //const rawHtml = fs.readFileSync('./src/bandcamp.html','utf8');
-        let rawHtml = await axios.get(this.albumUrl);
+    async parseTracksFromHtml(albumUrl:string) {
+        let rawHtml = await axios.get(albumUrl);
         const parser = new RecordingParser(rawHtml.data,this.recording);
         parser.parseDom();
     }

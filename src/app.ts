@@ -4,5 +4,5 @@ dotenv.config()
 const bandCamp = new BandCamp();
 
 (async() => {
-   await bandCamp.downloadTracks();
+   await bandCamp.main();
 })();

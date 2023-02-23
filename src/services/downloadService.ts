@@ -1,15 +1,16 @@
 import axios from "axios";
 import ProgressBar from 'progress';
-import fs from 'fs';
+import fs, {WriteStream} from 'fs';
 import chalk from 'chalk';
 import Recording from "../recording/recording";
-import {TrackData} from "../types";
+import {TrackData,NodeSystemError} from "../types";
 import {Promise as NodeID3Promise} from "node-id3";
+import RecordingPath from "../recording/recordingPath";
 
 export default class DownloadService {
 
 
-    async downloadTrack(track:TrackData, path: string, currTrack: number,totalTracks: number) {
+    async downloadTrack(recordingPath: RecordingPath,track: TrackData, currTrack: number,totalTracks: number) {
         const { data, headers } = await axios({
             url:track.streamUrl,
             method: 'GET',
@@ -20,45 +21,69 @@ export default class DownloadService {
             width: 40,
             complete: '=',
             incomplete: ' ',
-            renderThrottle: 1,
+            renderThrottle: 16,
             total: parseInt(totalLength)
         });
 
-        const writer = fs.createWriteStream(path,{flags:'wx+'});
+        const writer = fs.createWriteStream(recordingPath.getTrackPath(track),{flags:'wx+'});
 
-        // writer.on('error', (err) => {
-        //     //assume type 2 jam, and therefore duplicate is actually just a continuation of the song...
-        //     if(err.code === 'EEXIST') {
-        //         path = this.getType2(path);
-        //         return this.downloadTrack(url,path,title,currTrack,totalTracks);
-        //     } else {
-        //         throw err;
-        //     }
-        // })
+        writer.on('error', (err:NodeSystemError) => {
+            //assume type 2 jam, and therefore duplicate is actually just a continuation of the song...
+            if(err.code === 'EEXIST') {
+                track.title = this.getType2(track);
+                return this.downloadTrack(recordingPath,track,currTrack,totalTracks);
+            }
+            else {
+                console.trace();
+                throw err;
+            }
+        })
         data.on('data', (chunk: string | any[]) => {
             progress.tick(chunk.length)
         })
 
-        writer.on('close',() => {
+        writer.on('finish',() => {
             if(track.metadata) {
-                NodeID3Promise.write(track.metadata,path)
+                NodeID3Promise.write(track.metadata,recordingPath.getTrackPath(track))
                     .catch((err) => {
+                        console.trace();
                         console.log(chalk.red(err));
                     });
             }
+            if(currTrack === totalTracks) {
+                console.log(chalk.green(`Finished!`));
+                console.log(chalk.cyan("Cleaning up..."));
+                this.removeAlbumImage(recordingPath.getAlbumImagePath());
+            }
         });
 
-        if(currTrack === totalTracks) {
-            writer.on('finish', () => {
-                console.log(chalk.green(`Finished!`));
-            })
-        }
         data.pipe(writer)
     }
 
-    prepareAlbumDirName(artist: string, album: string): string {
-        album = album.replace(/[/\\?%*:|"<>]/g, '_').trim();
-        return `${artist}/${album}`
+    /**
+     *If song is a type 2 jam, there will be multiple song titles with the same name.
+     *We handle type 2 jams by appending a [n] to the end of the song title. Where n represents the
+     * number of times that song occurs. (i.e. Lawn Boy, Crosseyed and Painless, Lawn Boy [2])
+     * This function will check for the last occurrence of [n], update the occurrence so that [n] is [n + 1].
+     * If no [n] match found, returns [2].
+     *
+     *///todo refactor this a bit
+    getType2(track:TrackData) {
+        const rawSong = track.title;
+        const reg = /\[+[^\]]*]*(?!.*\[)/; //checks for last occurrence of []
+        let matched = rawSong.match(reg);
+        if(matched) {
+            matched = matched[0].match(/\d+/);
+            if(matched) {
+                const occurrence = parseInt(matched[0]);
+                const rawName = rawSong.split(`[${occurrence}]`)[0];
+                const updatedOccurrence = occurrence + 1;
+                return `${rawName}[${updatedOccurrence}].mp3`;
+            }
+            //looks like there was a string in the match... return original song string
+            return track.title;
+        }
+        return `${rawSong} [2]`;
     }
 
     async createFolder(dir: string): Promise<boolean> {
@@ -86,11 +111,7 @@ export default class DownloadService {
         data.pipe(writer);
     }
 
-    removeAlbumImage(imagePath:string):boolean {
-        fs.rm(imagePath,(err) => {
-            console.log(chalk.red(err));
-            return false;
-        });
-        return true;
+    async removeAlbumImage(imagePath:string):Promise<void> {
+        await fs.promises.rm(imagePath);
     }
 }

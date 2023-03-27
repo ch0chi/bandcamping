@@ -1,6 +1,7 @@
 import axios from "axios";
 import ProgressBar from 'progress';
 import fs, {WriteStream} from 'fs';
+import * as fsPromises from 'node:fs/promises'
 import chalk from 'chalk';
 import Recording from "../recording/recording";
 import {TrackData,NodeSystemError} from "../types";
@@ -9,8 +10,7 @@ import RecordingPath from "../recording/recordingPath";
 
 export default class DownloadService {
 
-
-    async downloadTrack(recordingPath: RecordingPath,track: TrackData, currTrack: number,totalTracks: number) {
+    async downloadTrack(recordingPath: RecordingPath,track: TrackData, currTrack: number,totalTracks: number){
         const { data, headers } = await axios({
             url:track.streamUrl,
             method: 'GET',
@@ -25,39 +25,40 @@ export default class DownloadService {
             total: parseInt(totalLength)
         });
 
-        const writer = fs.createWriteStream(recordingPath.getTrackPath(track),{flags:'wx+'});
+        data.on('data', (chunk: string | any[]) => {
+            progress.tick(chunk.length)
+        });
 
-        writer.on('error', (err:NodeSystemError) => {
+        try{
+            await fsPromises.writeFile(recordingPath.getTrackPath(track),data,{flag:'wx+'});
+        }
+        catch(error){
+            const err = error as NodeSystemError;
             //assume type 2 jam, and therefore duplicate is actually just a continuation of the song...
             if(err.code === 'EEXIST') {
                 track.title = this.getType2(track);
-                return this.downloadTrack(recordingPath,track,currTrack,totalTracks);
+                await this.downloadTrack(recordingPath,track,currTrack,totalTracks);
             }
             else {
                 console.trace();
                 throw err;
             }
-        })
-        data.on('data', (chunk: string | any[]) => {
-            progress.tick(chunk.length)
-        })
+        }
 
-        writer.on('finish',() => {
-            if(track.metadata) {
-                NodeID3Promise.write(track.metadata,recordingPath.getTrackPath(track))
-                    .catch((err) => {
-                        console.trace();
-                        console.log(chalk.red(err));
-                    });
-            }
-            if(currTrack === totalTracks) {
-                console.log(chalk.green(`Finished!`));
-                console.log(chalk.cyan("Cleaning up..."));
-                this.removeAlbumImage(recordingPath.getAlbumImagePath());
-            }
-        });
+        if(track.metadata) {
+            NodeID3Promise.write(track.metadata,recordingPath.getTrackPath(track))
+                .catch((err) => {
+                    console.trace();
+                    console.log(chalk.red(err));
+                });
+        }
 
-        data.pipe(writer)
+        if(currTrack === totalTracks) {
+            console.log(chalk.green(`Finished!`));
+            console.log(chalk.cyan("Cleaning up..."));
+            await this.removeAlbumImage(recordingPath.getAlbumImagePath());
+        }
+
     }
 
     /**

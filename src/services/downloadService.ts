@@ -1,7 +1,6 @@
 import axios from "axios";
 import ProgressBar from 'progress';
 import fs, {WriteStream} from 'fs';
-import * as fsPromises from 'node:fs/promises'
 import chalk from 'chalk';
 import Recording from "../recording/recording";
 import {TrackData,NodeSystemError} from "../types";
@@ -30,7 +29,7 @@ export default class DownloadService {
         });
 
         try{
-            await fsPromises.writeFile(recordingPath.getTrackPath(track),data,{flag:'wx+'});
+            await fs.promises.writeFile(recordingPath.getTrackPath(track),data,{flag:'wx+'});
         }
         catch(error){
             const err = error as NodeSystemError;
